@@ -31,19 +31,107 @@ makerers=
     smock:冒烟测试
 ```
 ## 三、共享机制 conftest.py
+- 共享文件中一般设置是全局fixate，具有以下特点
+- pytest会默认读取 conftest.py里面的所有fixture，不用import
+- conftest.py 文件名称是固定的
+- conftest.py 对当前目录下面的所有测试函数和测试类生效
+- conftest,py 中的fixture，一般scope="session", 如下面的文件
+```python
+import pytest
+
+@pytest.fixture(scope='session')
+def login():
+    print("session级别前置...")
+    yield
+    print("session级别后置...done")
+```
 ## 四、前后置处理 fixture装饰器
 ### 4.1、fixture调用方式
 #### 4.1.1、入参式调用
+- 入参式调用是指 测试用例把 前后置函数的函数名作为入参，来显式调用，yield 之前是前置处理，yield之后是后置处理
 ```
 @pytest.fixture()
 def loginByPwd():
     print("loginByPwd...")
 
 class TestLogin:
-    def test_login(self, loginByPwd): # 状态shi
+    def test_login(self, loginByPwd): 
         print('test_login...')
 ```
 #### 4.1.2、fixture相互调用
+- 相互调用指被调用的前后置函数本身调用了别的前后置函数，例如下面的脚本
+```python
+import pytest
+'''
+本文件测试 前后置函数相互调用
+'''
+
+@pytest.fixture()
+def login1():
+    print('函数一前置...')
+    yield
+    print('函数一后置...')
+
+@pytest.fixture()
+def login2(login1):
+    print('函数二前置...')
+    yield
+    print('函数二后置...')
+
+@pytest.fixture()
+def login3(login2):
+    print('函数三前置...')
+    yield
+    print('函数三后置...')
+
+def test_xianghu(login3):
+    print("测试函数一...")
+class TestXiangHu:
+    def test_login1(self, login1):
+        print("测试方法一...")
+
+    def test_login2(self, login2):
+        print("测试方法二...")
+
+    def test_login3(self, login3):
+        print('测试前置函数三...')
+
+
+if __name__ == '__main__':
+    pytest.main()
+```
+- 则执行结果如下，最外层前置函数会最先被调用，然后在一层层往内调用，用例执行结束后，最内层后置函数会最先执行，最后执行的是外层后置函数
+```
+============================= test session starts ==============================
+collecting ... collected 4 items
+
+test_xianghu.py::test_xianghu 函数一前置...
+函数二前置...
+函数三前置...
+PASSED                                     [ 25%]测试函数一...
+函数三后置...
+函数二后置...
+函数一后置...
+
+test_xianghu.py::TestXiangHu::test_login1 函数一前置...
+PASSED                         [ 50%]测试方法一...
+函数一后置...
+
+test_xianghu.py::TestXiangHu::test_login2 函数一前置...
+函数二前置...
+PASSED                         [ 75%]测试方法二...
+函数二后置...
+函数一后置...
+
+test_xianghu.py::TestXiangHu::test_login3 函数一前置...
+函数二前置...
+函数三前置...
+PASSED                         [100%]测试前置函数三...
+函数三后置...
+函数二后置...
+函数一后置...
+============================== 4 passed in 0.01s ===============================
+```
 ### 4.2、fixture做用域
 #### 4.2.1 function域
 - scope="function"时，会在所有调用的测试函数或方法的前后各执行一次，默认就是function
@@ -304,7 +392,58 @@ PASSEDsession级别后置...done
 ```
 ### 4.3、fixture参数
 #### 4.3.1 name参数
+- name参数是指可以给前置函数取别名，测试函数或方法调用的时候直接用别名作为入参，前置函数的返回值，测试函数或方法可以直接获取到，如下
+```python
+import pytest
+'''
+本文测试函数的name参数，及返回值
+'''
 
+@pytest.fixture(name='fun_1')
+def login():
+    print("login前置...")
+    yield
+    print("login后置...done")
+
+@pytest.fixture()
+def login1():
+    print('login1前置...')
+    return 66
+
+def test_login(fun_1):
+    print("测试函数一...")
+
+
+def test_login1(login1):
+    print("测试函数二，获取到的return:{}".format(login1))
+
+def test_logins(fun_1, login1):
+    print("测试函数三，多调用，获取到的return:{}".format(login1))
+
+if __name__ == '__main__':
+    pytest.main()
+```
+- 则执行结果如下哦
+```
+============================= test session starts ==============================
+collecting ... collected 3 items
+
+test_fixture_name.py::test_login login前置...
+PASSED                                  [ 33%]测试函数一...
+login后置...done
+
+test_fixture_name.py::test_login1 login1前置...
+PASSED                                 [ 66%]测试函数二，获取到的return:66
+
+test_fixture_name.py::test_logins login前置...
+login1前置...
+PASSED                                 [100%]测试函数三，多调用，获取到的return:66
+login后置...done
+
+
+============================== 3 passed in 0.01s ===============================
+
+```
 #### 4.3.2 parame参数
 - @pytest.fixture(params=[1,2,(3,4,5),{"key1":"val1","key2":"val2"}]) 支持可迭代参数
 - 则下面的测试脚本执行结果如下
@@ -416,8 +555,139 @@ autouse后置处理...
 
 ```
 ## 五、用例管理
-### 5.1、 跳过用例skip、skipif
-### 5.2、 pytest.skip() 装饰器
+### 5.1、 跳过用例pytest.mark.skip、pytest.mark.skipif
+- 这两种标记可做用于测试函数、测试类、测试方法
+- 作用于测试类时，该类下面的所有方法都被跳过，如下面的脚本
+```python
+import pytest
+
+@pytest.mark.skip(reason='无条件跳过测试函数一')
+def test_login():
+    print(' 测试函数一...')
+
+def test_login1():
+    print(' 测试函数二...')
+
+@pytest.mark.skipif(condition=2>1, reason='条件判断为真，跳过测试函数三')
+def test_login2():
+    print(' 测试函数三...')
+
+@pytest.mark.skip(reason="作用测试类，下面的测试方法都跳过")
+class TestLogin:
+    def test_login(self):
+        print("测试方法一...")
+
+class TestLogin2:
+    def test_login1(self):
+        print("测试方法二...")
+
+    @pytest.mark.skipif(condition=2>1, reason="条件为真，跳过测试类中的方法三")
+    def test_login2(self):
+        print("测试方法三...")
+
+if __name__ == '__main__':
+    pytest.main()
+```
+- 则执行结果如下
+```
+============================= test session starts ==============================
+collecting ... collected 6 items
+
+test_make_skip.py::test_login SKIPPED (无条件跳过测试函数一)             [ 16%]
+Skipped: 无条件跳过测试函数一
+
+test_make_skip.py::test_login1 PASSED                                    [ 33%] 测试函数二...
+
+test_make_skip.py::test_login2 SKIPPED (条件判断为真，跳过测试函数三)    [ 50%]
+Skipped: 条件判断为真，跳过测试函数三
+
+test_make_skip.py::TestLogin::test_login SKIPPED (作用测试类，下面的测试方法都跳过) [ 66%]
+Skipped: 作用测试类，下面的测试方法都跳过
+
+test_make_skip.py::TestLogin2::test_login1 PASSED                        [ 83%]测试方法二...
+
+test_make_skip.py::TestLogin2::test_login2 SKIPPED (条件为真，跳过测试类中的方法二) [100%]
+Skipped: 条件为真，跳过测试类中的方法二
+
+
+========================= 2 passed, 4 skipped in 0.01s =========================
+```
+### 5.2、pytest.skip() 装饰器
+- pytest.skip()装饰在测试方法或函数外部时，是module级别的，即所有的测试函数、测试类、测试方法都不会执行
+- 当用在外部时，需要指定 allow_module_level=True 参数，否则会报错，如下面的测试函数
+```python
+import pytest
+
+@pytest.fixture()
+def login():
+    print('前置处理器...')
+    yield
+    print('后置处理器...done')
+
+@pytest.skip(reason="随机跳过")
+def test_login1(login):
+    print('测试函数一...')
+```
+- 则运行时会有如下报错
+```
+============================= test session starts ==============================
+collecting ... 
+test_skip.py:None (test_skip.py)
+Using pytest.skip outside of a test will skip the entire module. If that's your intention, pass `allow_module_level=True`. If you want to skip a specific test or an entire class, use the @pytest.mark.skip or @pytest.mark.skipif decorators.
+collected 0 items / 1 error
+
+!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!
+=============================== 1 error in 0.09s ===============================
+```
+- 不论测试函数，还是测试类，或测方法 pytest.skip()加上 allow_module_level=True 参数后，本python文件的测试用例都会被跳过，运行结果如下
+```
+============================= test session starts ==============================
+collecting ... 
+Skipped: 跳过测试方法二
+collected 0 items / 1 skipped
+
+============================== 1 skipped in 0.00s ==============================
+```
+- 在测方法或函数内部跳出，类似break
+```python
+import  pytest
+class TestLogin:
+    def test_login(self, login):
+        print("测试方法一...")
+    # @pytest.skip(reason ="跳过测试方法二",allow_module_level=True)
+    def test_login2(self, login):
+        i = 0
+        while i < 10:
+            print("测试方法二,循环{}...".format(i))
+            i += 1
+            if i == 6:
+                pytest.skip(" 后面的不执行了...")
+
+if __name__ == '__main__':
+    pytest.main()
+```
+- 执行结果如下
+```
+test_skip.py::TestLogin::test_login 前置处理器...
+PASSED                               [ 75%]测试方法一...
+后置处理器...done
+
+test_skip.py::TestLogin::test_login2 前置处理器...
+SKIPPED ( 后面的不执行了...)        [100%]测试方法二,循环0...
+测试方法二,循环1...
+测试方法二,循环2...
+测试方法二,循环3...
+测试方法二,循环4...
+测试方法二,循环5...
+
+Skipped:  后面的不执行了...
+后置处理器...done
+
+
+========================= 3 passed, 1 skipped in 0.01s =========================
+```
+### 5.3、pytest.importskip() 缺少导入跳过
+### 5.4、@pytest.mark.model @pytest.mark.regular 自定义标记
 ### 5.3、执行顺序
 ### 5.4、失败标记和失败重试
 ### 5.5、设置断点
