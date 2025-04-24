@@ -1,6 +1,6 @@
 import pytest
 '''
-测试pytest.skip()
+pytest.skip() module级别跳过，和内部跳过
 '''
 
 @pytest.fixture()
@@ -30,5 +30,5 @@ class TestLogin:
                 pytest.skip(" 后面的不执行了...")
 
 
-if __name__ == '__main__':
-    pytest.main()
+# if __name__ == '__main__':
+#     pytest.main()

@@ -28,5 +28,5 @@ class TestLogin2:
         print("测试方法三...")
 
 
-if __name__ == '__main__':
-    pytest.main()
+# if __name__ == '__main__':
+#     pytest.main()

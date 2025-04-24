@@ -24,9 +24,9 @@ pytest ./test_login.py
 [pytest]
 addopts=-vs -m slow --html=./report/report.html
 testpaths=testcase
-test_files=test_*.py
-test_classes=Test*
-test_functions=test_*
+python_files=test_*.py
+python_classes=Test*
+python_functions=test_*
 makerers=
     smock:冒烟测试
 ```
@@ -687,11 +687,499 @@ Skipped:  后面的不执行了...
 ========================= 3 passed, 1 skipped in 0.01s =========================
 ```
 ### 5.3、pytest.importskip() 缺少导入跳过
+- pytest.importskip() 跳过是module级别的，不管在哪里调用，如下脚本
+```python
+import pytest
+
+@pytest.fixture()
+def login():
+    print("前置处理...")
+    yield
+    print('后置处理...done')
+
+def test_login(login):
+    print("测试函数一...")
+
+# @pytest.importorskip("os", minversion='8.3.5', reason="框架必须")
+def test_login1(login):
+    print("测试函数二...")
+
+@pytest.importorskip("fastapi", minversion='1.0.2', reason="测试导入", exc_type=ModuleNotFoundError )
+def test_login2(login):
+    print("测试函数三...")
+
+if __name__ == '__main__':
+    pytest.main()
+```
+- 则执行结果如下
+```
+============================= test session starts ==============================
+collecting ... 
+Skipped: 测试导入
+collected 0 items / 1 skipped
+
+============================== 1 skipped in 0.01s ==============================
+```
 ### 5.4、@pytest.mark.model @pytest.mark.regular 自定义标记
+- 有如下测试文件，分别标记了 model 和 regular
+```python
+import pytest
+
+@pytest.mark.model
+def test_mark_model():
+    print('测试mark.model函数...')
+
+@pytest.mark.regular
+def test_mark_regular():
+    print('测试mark.regular函数...')
+
+@pytest.mark.model
+class TestMark:
+    def test_mark1(self):
+        print("测试方法一...")
+
+    def test_mark2(self):
+        print("测试方法二...")
+```
+- 如果要执行 model 标记的用例，可以使用如下命令
+- >pytest -s -m 'model' case.py
+- 执行结果如下,可以看到，model标记的用例执行了，regular标记的用例跳过了，如果要执行regular标记的用例，处理-m "regular", 还可以使用 -m "not model", 这种方式会出现warn信息，可以使用配置文件来避免
+```
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+collected 4 items / 1 deselected / 3 selected                                                                                                                    
+
+cases_manager/test_mark.py 测试mark.model函数...
+.测试方法一...
+.测试方法二...
+.
+
+======================================================================== warnings summary ========================================================================
+cases_manager/test_mark.py:6
+  /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_mark.py:6: PytestUnknownMarkWarning: Unknown pytest.mark.model - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.model
+
+cases_manager/test_mark.py:10
+  /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_mark.py:10: PytestUnknownMarkWarning: Unknown pytest.mark.regular - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.regular
+
+cases_manager/test_mark.py:14
+  /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_mark.py:14: PytestUnknownMarkWarning: Unknown pytest.mark.model - is this a typo?  You can register custom marks to avoid this warning - for details, see https://docs.pytest.org/en/stable/how-to/mark.html
+    @pytest.mark.model
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+========================================================== 3 passed, 1 deselected, 3 warnings in 0.01s ===========================================================
+```
+- 使用pytest.ini 配置文件来避免warn，配置文件可以放在根目录，也可以放在包目录，有如下配置文件
+```
+[pytest]
+;测试路径
+testpath=cases_manager
+;测试module格式
+python_files=test_*.py
+;测试类格式
+python_class=Test*
+;测试函数格式
+python_functions=test_*
+;启动参数
+addopts=
+    -s
+    -v
+    ;禁止告警输出
+    --disable-warnings
+;自定义标记
+markers=
+    model: 模型用例标记
+    regular: 常规用例标记
+    smoke: 冒烟用例标记
+    slow: 标记慢测试
+    integration: 集成测试
+    regression: 回归测试
+
+;log 配置（可选）
+log_cli = true
+log_cli_level = INFO
+log_format = %(asctime)s [%(levelname)s] %(message)s
+log_date_format = %Y-%m-%d %H:%M:%S
+```
+- 则执行结果如下，没有了告警
+```
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m 'smoke'
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0 -- /Users/hb32366/devs/PyTestPro/venv/bin/python
+cachedir: .pytest_cache
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 61 items / 59 deselected / 1 skipped / 2 selected                                                                                                      
+
+cases_manager/test_mark.py::TestMark::test_mark1 测试方法一...
+PASSED
+cases_manager/test_mark.py::TestMark::test_mark2 测试方法二...
+PASSED
+
+==================================================== 2 passed, 1 skipped, 59 deselected, 2 warnings in 0.02s =====================================================
+```
 ### 5.3、执行顺序
 ### 5.4、失败标记和失败重试
+- 失败标记，pytest.mark.xfail(condition, reason, run, raises, strict)
+- 满足condition会将用例标记失败
+- reason 标记原因
+- run=True 即使标记了失败，仍然执行， False标记了失败，不执行用例
+- raise 异常抛出类型
+- strict=Ture 严格的输出结果， False 简化输出结果
+- 有以下测试文件
+```python
+from pickle import FALSE
+
+import pytest
+'''
+pytest.mark.xfail
+'''
+
+@pytest.mark.own
+@pytest.mark.xfail(condition=2>1, reason='满足条件，标记失败', run=True, raises=BaseException, strict=True)
+def test_fail():
+    print("测试标记失败...")
+@pytest.mark.own
+def test_success():
+    print("测试通过...")
+```
+- run=False 时执行 pytest -m "own", 结果如下
+```
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 63 items / 61 deselected / 1 skipped / 2 selected                                                                                                      
+
+cases_manager/test_markfail.py::test_fail XFAIL ([NOTRUN] 满足条件，标记失败)
+cases_manager/test_markfail.py::test_success 测试通过...
+PASSED
+
+=============================================== 1 passed, 1 skipped, 61 deselected, 1 xfailed, 4 warnings in 0.08s ===============================================
+```
+- run=True , strict=True时执行结果如下
+```
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 63 items / 61 deselected / 1 skipped / 2 selected                                                                                                      
+
+cases_manager/test_markfail.py::test_fail 测试标记失败...
+FAILED
+cases_manager/test_markfail.py::test_success 测试通过...
+PASSED
+
+============================================================================ FAILURES ============================================================================
+___________________________________________________________________________ test_fail ____________________________________________________________________________
+[XPASS(strict)] 满足条件，标记失败
+==================================================================== short test summary info =====================================================================
+FAILED cases_manager/test_markfail.py::test_fail
+=============================================== 1 failed, 1 passed, 1 skipped, 61 deselected, 4 warnings in 0.03s ================================================
+```
+- run=True, run=False执行结果如下 
+```
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 63 items / 61 deselected / 1 skipped / 2 selected                                                                                                      
+
+cases_manager/test_markfail.py::test_fail 测试标记失败...
+XPASS (满足条件，标记失败)
+cases_manager/test_markfail.py::test_success 测试通过...
+PASSED
+
+=============================================== 1 passed, 1 skipped, 61 deselected, 1 xpassed, 4 warnings in 0.03s ===============================================
+```
+- 失败后重试需要按照插件 pytest-rerun、pytest-rerunfailures
 ### 5.5、设置断点
+- 在函数方法或内部设置断点后，则之前的case正常执行，除非主动exit(),会执行后置处理，断点之后的case不会执行，如下面的脚本, 其他module不受影响
+```python
+import pytest
+import pdb
+
+
+@pytest.fixture(scope='function')
+def login():
+    print("前置处理...")
+    yield
+    print("后置处理...done")
+
+@pytest.mark.pdb
+def test_pdb(login):
+    print("测试函数一...")
+    pdb.set_trace()
+    print('断点之后不会执行...')
+
+@pytest.mark.pdb
+def test_pdb2(login):
+    print("测试函数二,不受断点影响...")
+```
+- 执行结果如下
+```
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "own or  pdb"
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 66 items / 61 deselected / 1 skipped / 5 selected                                                                                                      
+
+cases_manager/test_markfail.py::test_fail XFAIL ([NOTRUN] 满足条件，标记失败)
+cases_manager/test_markfail.py::test_success 测试通过...
+PASSED
+cases_manager/test_pdb.py::test_pdb 前置处理...
+测试函数一...
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB set_trace >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+> /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_pdb.py(15)test_pdb()
+-> print('断点之后不会执行...')
+(Pdb) --KeyboardInterrupt--
+(Pdb) exit
+后置处理...done
+
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! _pytest.outcomes.Exit: Quitting debugger !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+======================================== 1 passed, 1 skipped, 61 deselected, 1 xfailed, 7 warnings in 82.44s (0:01:22) ==========================================
+```
+- 但是，如果在测试方法前面加了断点，则整个测试流程会阻塞, 需要输入c 则继续执行到结束，输入q 或 exit 则会引发报错
+- 输入c的效果
+```
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "own or  pdb"
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collecting ... 
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB set_trace >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+> /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_pdb.py(22)<module>()
+-> @pytest.mark.pdb
+(Pdb) c
+
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB continue >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+collected 66 items / 61 deselected / 1 skipped / 5 selected                                                                                                      
+
+cases_manager/test_markfail.py::test_fail XFAIL ([NOTRUN] 满足条件，标记失败)
+cases_manager/test_markfail.py::test_success 测试通过...
+PASSED
+cases_manager/test_pdb.py::test_pdb 前置处理...
+测试函数一...
+断点之后不会执行...
+PASSED后置处理...done
+
+cases_manager/test_pdb.py::test_pdb2 前置处理...
+测试函数二,不受断点影响...
+PASSED后置处理...done
+
+cases_manager/test_pdb.py::test_pdb3 前置处理...
+测试函数三, 断点之后不执行...
+PASSED后置处理...done
+
+
+=============================================== 4 passed, 1 skipped, 61 deselected, 1 xfailed, 7 warnings in 1.69s ===============================================
+```
+- 输入q则会引发报错
+```
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collecting ... 
+>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>> PDB set_trace >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>
+> /Users/hb32366/devs/PyTestPro/hello/cases_manager/test_pdb.py(22)<module>()
+-> @pytest.mark.pdb
+(Pdb) q
+collected 63 items / 1 error / 61 deselected / 1 skipped / 2 selected                                                                                            
+
+============================================================================= ERRORS =============================================================================
+___________________________________________________________ ERROR collecting cases_manager/test_pdb.py ___________________________________________________________
+cases_manager/test_pdb.py:22: in <module>
+    @pytest.mark.pdb
+cases_manager/test_pdb.py:22: in <module>
+    @pytest.mark.pdb
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/bdb.py:88: in trace_dispatch
+    return self.dispatch_line(frame)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/bdb.py:112: in dispatch_line
+    self.user_line(frame)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pdb.py:262: in user_line
+    self.interaction(frame, None)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pdb.py:357: in interaction
+    self._cmdloop()
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pdb.py:322: in _cmdloop
+    self.cmdloop()
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/cmd.py:138: in cmdloop
+    stop = self.onecmd(line)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/pdb.py:422: in onecmd
+    return cmd.Cmd.onecmd(self, line)
+/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/lib/python3.9/cmd.py:217: in onecmd
+    return func(arg)
+../venv/lib/python3.9/site-packages/_pytest/debugging.py:200: in do_quit
+    outcomes.exit("Quitting debugger")
+E   _pytest.outcomes.Exit: Quitting debugger
+==================================================================== short test summary info =====================================================================
+ERROR cases_manager/test_pdb.py - _pytest.outcomes.Exit: Quitting debugger
+!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! Interrupted: 1 error during collection !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+===================================================== 1 skipped, 61 deselected, 6 warnings, 1 error in 2.65s =====================================================
+```
 ## 六、数据驱动
 ### 6.1、 pytest.mark.parametrize参数化
+#### 6.1.1、函数数据参数化
+- 参数化为可迭代对象时，迭代几次就执行几次case，如下面的脚本
+```python
+import pytest
+@pytest.mark.parametrize('a', [3,6])
+@pytest.mark.parame
+def test_a(a):
+    print("函数数据参数化...")
+    assert a%3 == 0
+```
+- 会执行2次，执行结果如下
+```
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "parame" 
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 78 items / 74 deselected / 1 skipped / 4 selected                                                                                                      
+
+params/test_mark_parametrize.py::test_a[3] 函数数据参数化...
+PASSED
+params/test_mark_parametrize.py::test_a[6] 函数数据参数化...
+PASSED
+```
+#### 6.1.2、多个参数
+- 支持多个参数，但是参数名要与value对应，如下代码
+```python
+import pytest
+@pytest.mark.parametrize('a,b', [(1,2), (2,1)])
+@pytest.mark.parame
+def test_b(a,b):
+    print("多个参数...")
+    assert a+b == 3 # 对a b元组中的数据分别取数相加
+```
+- 测试结果如下
+```
+params/test_mark_parametrize.py::test_b[1-2] 多个参数...
+PASSED
+params/test_mark_parametrize.py::test_b[2-1] 多个参数...
+PASSED
+
+```
+#### 6.1.3、函数的返回值参数化
+- 定义一个函数，把返回值作为入参，如下面的代码
+```python
+import pytest
+
+def datas():
+    return [(1,2), (2,1),(0,3),(2,2)]
+
+@pytest.mark.parametrize('a,b', datas())
+@pytest.mark.parame3
+def test_c(a,b):
+    print("函数返回值作为入参：{}+{}".format(a,b))
+    assert a+b == 3
+```
+- 则执行结果如下
+```
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "parame3"
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 78 items / 74 deselected / 1 skipped / 4 selected                                                                                                      
+
+params/test_mark_parametrize.py::test_c[1-2] 函数返回值作为入参：1+2
+PASSED
+params/test_mark_parametrize.py::test_c[2-1] 函数返回值作为入参：2+1
+PASSED
+params/test_mark_parametrize.py::test_c[0-3] 函数返回值作为入参：0+3
+PASSED
+params/test_mark_parametrize.py::test_c[2-2] 函数返回值作为入参：2+2
+FAILED
+
+============================================================================ FAILURES ============================================================================
+__________________________________________________________________________ test_c[2-2] ___________________________________________________________________________
+
+a = 2, b = 2
+
+    @pytest.mark.parametrize('a,b', datas())
+    @pytest.mark.parame3
+    def test_c(a,b):
+        print("函数返回值作为入参：{}+{}".format(a,b))
+>       assert a+b == 3
+E       assert (2 + 2) == 3
+
+params/test_mark_parametrize.py:30: AssertionError
+==================================================================== short test summary info =====================================================================
+FAILED params/test_mark_parametrize.py::test_c[2-2] - assert (2 + 2) == 3
+=============================================== 1 failed, 3 passed, 1 skipped, 74 deselected, 11 warnings in 0.05s ===============================================
+```
+#### 6.1.4、参数化的卡迪尔集
+- 支持多个参数化装饰器，最终用例执行次数是 多参数个数的乘积，如下面的脚本
+```python
+import pytest
+data_1 = (1,2,3)
+data_2 = (4,5,6)
+
+@pytest.mark.parametrize('a', data_1)
+@pytest.mark.parametrize('b', data_2)
+@pytest.mark.parame6
+def test_d(a, b):
+    assert a+b == 3
+```
+- 执行结果如下，可以看到，多参数个数为3，总执行测试为 3*3 = 9
+```shell
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "parame6"
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 83 items / 74 deselected / 1 skipped / 9 selected  
+==================================================================== short test summary info =====================================================================
+FAILED params/test_mark_parametrize.py::test_d[4-1] - assert (1 + 4) == 3
+FAILED params/test_mark_parametrize.py::test_d[4-2] - assert (2 + 4) == 3
+FAILED params/test_mark_parametrize.py::test_d[4-3] - assert (3 + 4) == 3
+FAILED params/test_mark_parametrize.py::test_d[5-1] - assert (1 + 5) == 3
+FAILED params/test_mark_parametrize.py::test_d[5-2] - assert (2 + 5) == 3
+FAILED params/test_mark_parametrize.py::test_d[5-3] - assert (3 + 5) == 3
+FAILED params/test_mark_parametrize.py::test_d[6-1] - assert (1 + 6) == 3
+FAILED params/test_mark_parametrize.py::test_d[6-2] - assert (2 + 6) == 3
+FAILED params/test_mark_parametrize.py::test_d[6-3] - assert (3 + 6) == 3
+==================================================== 9 failed, 1 skipped, 74 deselected, 14 warnings in 0.06s ====================================================
+```
+#### 6.1.5、参数化标记数据
+- pytest.mark.parametrize()支持 pytest.parma, 可以标记失败，skip用例，自定义标记等, pytest.param()入参，支持*args，marks=pytest.mark.xfail或者 pytest.mark.skip, 但是自定义mark似乎不起作用，比如我们定义的mark.parame5, 虽然没有被指定运行，但是还是被运行了，可以看下面的脚本
+```python
+import pytest
+@pytest.mark.parametrize("inp,expected", [('1+2', 3), ("2*2", 4),
+                                          pytest.param("6*6", 42, marks=pytest.mark.xfail(reason="参数化验证失败", run=True)) ,
+                                          pytest.param("6*9", 53, marks=pytest.mark.skip(reason="跳过此case")),
+                                          pytest.param("3*9", 27, marks=pytest.mark.parame4),
+                                          pytest.param("8*7", 55, marks=pytest.mark.parame5)])
+@pytest.mark.parame4
+def test_d(inp, expected):
+    assert eval(inp) == expected
+```
+- 执行结果如下，虽然执行命令是pytest -m "parame4"， 但是自定义标记parame5也被执行了
+```shell
+(venv) hb32366@hb32366deMacBook-Pro hello % pytest -m "parame4"
+====================================================================== test session starts =======================================================================
+platform darwin -- Python 3.9.6, pytest-8.3.5, pluggy-1.5.0
+rootdir: /Users/hb32366/devs/PyTestPro/hello
+configfile: pytest.ini
+collected 80 items / 74 deselected / 1 skipped / 6 selected                                                                                                      
+
+params/test_mark_parametrize.py::test_d[1+2-3] PASSED
+params/test_mark_parametrize.py::test_d[2*2-4] PASSED
+params/test_mark_parametrize.py::test_d[6*6-42] XFAIL (参数化验证失败)
+params/test_mark_parametrize.py::test_d[6*9-53] SKIPPED (跳过此case)
+params/test_mark_parametrize.py::test_d[3*9-27] PASSED
+params/test_mark_parametrize.py::test_d[8*7-55] FAILED
+
+============================================================================ FAILURES ============================================================================
+```
+### 6.2、pytest.fixture()参数化
+- pytest.fixture() 中也支持可迭代参数，在 4.3.2 parame参数 章节已介绍
 ## 七、测试报告管理
 ## 八、日志级别
